@@ -18,7 +18,7 @@ check:
 
 # Docker orkestratsiyasi (Kechroq bazani ko'tarish uchun)
 up:
-	docker-compose up -d
+	docker compose up -d
 
 down:
-	docker-compose down
+	docker compose down
