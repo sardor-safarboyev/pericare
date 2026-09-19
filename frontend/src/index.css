@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F1F5F9;
+    color: #1E293B;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* CommCare Material Button Effect */
+.commcare-btn {
+  background-color: #3B5998;
+  color: #FFFFFF;
+  font-weight: 500;
+  transition: all 0.15s ease-in-out;
+}
+.commcare-btn:hover {
+  background-color: #2D4373;
+}
