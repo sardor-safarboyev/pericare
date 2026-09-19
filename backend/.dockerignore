@@ -1,8 +1,19 @@
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.dockerignore
+node_modules
+dist
 .env
-tests/
-Makefile
-.pytest_cache/
+README.md
+m# Large files & ML data
+ml/data/
+backend/app/infrastructure/ml/data/
+backend/app/infrastructure/ml/models/*.joblib
+backend/catboost_info/
+*.deb

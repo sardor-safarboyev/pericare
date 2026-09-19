@@ -1,24 +1,41 @@
-from app.worker.celery_app import celery_app
+import asyncio
+import os
 
-# KELAJAKDA: Bu yerga NotificationService va UoW chaqiriladi
-# from app.infrastructure.db.uow import SQLAlchemyUnitOfWork
-# from app.infrastructure.notifications.telegram import TelegramNotificationService
+import httpx
+
+from app.worker.celery_app import celery
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 
-@celery_app.task(name="send_alert_notification")
-def handle_send_alert_notification(assessment_id: str, zone: str, district: str):
-    """
-    Worker uchun Entrypoint.
-    Xuddi API router kabi, bu yerda ham UoW va Service lar inyeksiya qilinib,
-    Use Case ishga tushiriladi.
-    """
-    print(f"[URGENT] Alert received for assessment {assessment_id}")
-    print(f"Zone: {zone}, District: {district}")
+async def _send_tg_message(chat_id: str, text: str):
+    if not TELEGRAM_BOT_TOKEN:
+        print(f"[TG_MOCK] To: {chat_id} | Text: {text}")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient() as client:
+        await client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
 
-    # DI qismi (Infrastructure yozilgach, haqiqiy obyektlar ulanadi)
-    # uow = SQLAlchemyUnitOfWork(...)
-    # notification_service = TelegramNotificationService(...)
-    # use_case = SendAlertUseCase(uow, notification_service)
-    # use_case.execute(assessment_id)
 
-    return {"status": "alert_processed", "assessment_id": assessment_id}
+@celery.task(name="send_telegram_alert_task")
+def send_telegram_alert_task(chat_id: str, message: str):
+    asyncio.run(_send_tg_message(chat_id, message))
+
+
+@celery.task(name="audit_sla_timeouts_task")
+def audit_sla_timeouts_task():
+    """Fon rejimida har daqiqada SLA muddati o'tgan holatlarni tekshiradi."""
+    from app.application.use_cases.referrals import AuditSLATimeoutsUseCase
+    from app.infrastructure.adapters.worker_adapter import CeleryWorkerAdapter
+    from app.infrastructure.database.session import AsyncSessionFactory
+    from app.infrastructure.database.unit_of_work import SqlUnitOfWork
+
+    async def _run():
+        uow = SqlUnitOfWork(AsyncSessionFactory)
+        worker = CeleryWorkerAdapter()
+        use_case = AuditSLATimeoutsUseCase(uow=uow, worker=worker)
+        escalated_count = await use_case.execute()
+        if escalated_count > 0:
+            print(f"[SLA_AUDIT] {escalated_count} ta holat viloyat darajasiga ko'tarildi.")
+
+    asyncio.run(_run())

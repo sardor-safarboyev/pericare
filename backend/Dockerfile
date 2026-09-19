@@ -1,23 +1,22 @@
-FROM python:3.10-slim
+FROM python:3.13
 
-# Muhit o'zgaruvchilari
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+# Tesseract OCR va kerakli kutubxonalarni o'rnatish
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libgl1 \
+    libglib2.0-0 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Tizim paketlarini o'rnatish (C-kompilyatorlar ML kutubxonalari uchun kerak)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Kutubxonalarni o'rnatish
+# Bog'liqliklarni o'rnatish
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Loyiha kodini nusxalash
+# Kodlarni nusxalash
 COPY . .
 
-# Konteyner ishga tushganda bajariladigan standart komanda
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Standart port
+EXPOSE 8000
