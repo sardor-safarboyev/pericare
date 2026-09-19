@@ -1,27 +1,64 @@
-from fastapi import Request
+import os
+from uuid import UUID
 
-from app.application.ports.services.prediction import IPredictionService
-from app.application.ports.services.security import ISecurityService
-from app.application.ports.services.worker import ITaskQueue
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 
-# Portlarni chaqiramiz
-from app.application.ports.uow.unit_of_work import IUnitOfWork
+from app.domain.entities.staff import StaffMember
+from app.infrastructure.adapters.ml_predictor_adapter import LightGBMRiskPredictor
+from app.infrastructure.adapters.ocr_adapter import TesseractOCRAdapter
+from app.infrastructure.adapters.redis_cache_adapter import RedisCacheAdapter
+from app.infrastructure.adapters.security_adapter import BcryptPasswordHasher, JWTTokenAdapter
+from app.infrastructure.adapters.worker_adapter import CeleryWorkerAdapter
+from app.infrastructure.database.session import AsyncSessionFactory
+from app.infrastructure.database.unit_of_work import SqlUnitOfWork
 
-# Eslatma: Haqiqiy obyektlar dastur ishga tushganda FastAPI app.state
-# yoki maxsus DI konteyner orqali ulanadi (Infrastructure qatlami yozilgach).
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-perisafe-key-2026")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+hasher_instance = BcryptPasswordHasher()
+token_instance = JWTTokenAdapter(secret_key=JWT_SECRET)
+cache_instance = RedisCacheAdapter(redis_url=REDIS_URL)
+worker_instance = CeleryWorkerAdapter()
+ocr_instance = TesseractOCRAdapter()
+ml_instance = LightGBMRiskPredictor()
 
 
-def get_uow(request: Request) -> IUnitOfWork:
-    return request.app.state.uow
+def get_uow() -> SqlUnitOfWork:
+    return SqlUnitOfWork(AsyncSessionFactory)
 
 
-def get_security_service(request: Request) -> ISecurityService:
-    return request.app.state.security_service
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    uow: SqlUnitOfWork = Depends(get_uow),
+) -> StaffMember:
+    # 1. Redis qora ro'yxatini tekshirish
+    if await cache_instance.is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token bekor qilingan (chiqib ketilgan)",
+        )
 
+    # 2. JWT decode qilish
+    try:
+        payload = token_instance.decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Yaroqsiz token",
+        )
 
-def get_prediction_service(request: Request) -> IPredictionService:
-    return request.app.state.prediction_service
-
-
-def get_task_queue(request: Request) -> ITaskQueue:
-    return request.app.state.task_queue
+    # 3. Foydalanuvchini bazadan tekshirish
+    async with uow:
+        staff = await uow.staff.get_by_id(UUID(user_id))
+        if not staff or not staff.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Foydalanuvchi faol emas yoki mavjud emas",
+            )
+        return staff

@@ -1,0 +1,6 @@
+{
+  "cv_macro_f1": 0.9721,
+  "test_roc_auc": 0.998,
+  "test_macro_f1": 0.9609,
+  "red_brier_score": 0.0085
+}
